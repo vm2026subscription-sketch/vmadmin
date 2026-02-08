@@ -1,0 +1,21 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <div class="card" style="max-width: 520px; margin: 0 auto;">
+    <h2>Admin Setup</h2>
+    <form method="post">
+      <div class="field">
+        <label>Setup Token</label>
+        <input type="text" name="token" required />
+      </div>
+      <div class="field">
+        <label>Username</label>
+        <input type="text" name="username" required />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password" required />
+      </div>
+      <button class="btn" type="submit">Create Admin</button>
+    </form>
+  </div>
+{% endblock %}

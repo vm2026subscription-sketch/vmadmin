@@ -1,0 +1,31 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <div class="card">
+    <h2>Upload ePaper</h2>
+    <form method="post">
+      <div class="grid">
+        <div class="field">
+          <label>Date</label>
+          <input type="date" name="date" value="{{ today }}" />
+        </div>
+        <div class="field">
+          <label>Language</label>
+          <select name="language">
+            <option value="English">English</option>
+            <option value="Marathi">Marathi</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Title (optional)</label>
+          <input type="text" name="title" placeholder="Vidyarthi Mitra English - 2026-02-08" />
+        </div>
+        <div class="field">
+          <label>PDF URL</label>
+          <input type="url" name="url" placeholder="https://example.com/paper.pdf" required />
+        </div>
+      </div>
+
+      <button class="btn" type="submit">Upload Paper</button>
+    </form>
+  </div>
+{% endblock %}

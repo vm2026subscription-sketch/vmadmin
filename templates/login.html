@@ -1,0 +1,20 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <div class="card" style="max-width: 420px; margin: 0 auto;">
+    <h2>Admin Login</h2>
+    <form method="post">
+      <div class="field">
+        <label>Username</label>
+        <input type="text" name="username" required />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password" required />
+      </div>
+      <button class="btn" type="submit">Login</button>
+    </form>
+    <p class="muted" style="margin-top: 14px; font-size: 12px;">
+      If this is your first time, use the setup link with your token.
+    </p>
+  </div>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <div class="card">
+    <h2>Latest ePapers</h2>
+    {% if papers|length == 0 %}
+      <p class="muted">No papers uploaded yet.</p>
+    {% else %}
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Title</th>
+            <th>Language</th>
+            <th>Publisher</th>
+            <th>Link</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for paper in papers %}
+            <tr>
+              <td>{{ paper.date }}</td>
+              <td>{{ paper.title }}</td>
+              <td>{{ paper.language }}</td>
+              <td>{{ paper.publisher }}</td>
+              <td>
+                {% if paper.link %}
+                  <a href="{{ paper.link }}" target="_blank">Open</a>
+                {% else %}
+                  <span class="muted">No link</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+{% endblock %}
