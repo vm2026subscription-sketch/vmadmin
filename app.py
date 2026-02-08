@@ -130,8 +130,30 @@ def logout():
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    papers = list(epapers_col.find({}, {"_id": 0}).sort("date", DESCENDING).limit(200))
-    return render_template("dashboard.html", papers=papers)
+    query = {}
+    language = request.args.get("language") or ""
+    date_str = request.args.get("date") or ""
+
+    if language and language != "All":
+        query["language"] = language
+    if date_str:
+        query["date"] = date_str
+
+    papers = list(epapers_col.find(query, {"_id": 0}).sort("date", DESCENDING).limit(200))
+    
+    # Get unique dates for filter dropdown
+    unique_dates = sorted(
+        list(set(p["date"] for p in epapers_col.find({}, {"date": 1, "_id": 0}))),
+        reverse=True
+    )
+
+    return render_template(
+        "dashboard.html",
+        papers=papers,
+        selected_language=language,
+        selected_date=date_str,
+        available_dates=unique_dates,
+    )
 
 
 @app.route("/upload", methods=["GET", "POST"])
@@ -149,6 +171,48 @@ def upload():
         return redirect(url_for("dashboard"))
 
     return render_template("upload.html", today=today)
+
+
+@app.route("/edit/<paper_id>", methods=["GET", "POST"])
+@login_required
+def edit_paper(paper_id):
+    paper = epapers_col.find_one({"id": paper_id}, {"_id": 0})
+    if not paper:
+        flash("Paper not found.")
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        url = (request.form.get("url") or "").strip()
+        if not url:
+            flash("Please provide a PDF URL.")
+            return render_template("edit.html", paper=paper)
+
+        epapers_col.update_one(
+            {"id": paper_id},
+            {
+                "$set": {
+                    "date": request.form.get("date") or paper["date"],
+                    "language": request.form.get("language") or paper["language"],
+                    "title": request.form.get("title") or paper["title"],
+                    "link": url,
+                }
+            },
+        )
+        flash("Paper updated successfully.")
+        return redirect(url_for("dashboard"))
+
+    return render_template("edit.html", paper=paper)
+
+
+@app.route("/delete/<paper_id>", methods=["POST"])
+@login_required
+def delete_paper(paper_id):
+    result = epapers_col.delete_one({"id": paper_id})
+    if result.deleted_count > 0:
+        flash("Paper deleted successfully.")
+    else:
+        flash("Paper not found.")
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/api/epapers", methods=["GET"])

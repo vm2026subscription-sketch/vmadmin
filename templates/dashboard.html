@@ -2,8 +2,45 @@
 {% block content %}
   <div class="card">
     <h2>Latest ePapers</h2>
+    
+    <!-- Filter Section -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; margin-bottom: 24px; align-items: flex-end;">
+      <div class="field" style="margin-bottom: 0;">
+        <label>Filter by Language</label>
+        <form method="get" style="display: flex; gap: 8px;">
+          <select name="language" onchange="this.form.submit()" style="flex: 1;">
+            <option value="">All Languages</option>
+            <option value="English" {% if selected_language == 'English' %}selected{% endif %}>English</option>
+            <option value="Marathi" {% if selected_language == 'Marathi' %}selected{% endif %}>Marathi</option>
+          </select>
+          {% if selected_date %}
+            <input type="hidden" name="date" value="{{ selected_date }}" />
+          {% endif %}
+        </form>
+      </div>
+
+      <div class="field" style="margin-bottom: 0;">
+        <label>Filter by Date</label>
+        <form method="get" style="display: flex; gap: 8px;">
+          <select name="date" onchange="this.form.submit()">
+            <option value="">All Dates</option>
+            {% for date in available_dates %}
+              <option value="{{ date }}" {% if selected_date == date %}selected{% endif %}>{{ date }}</option>
+            {% endfor %}
+          </select>
+          {% if selected_language %}
+            <input type="hidden" name="language" value="{{ selected_language }}" />
+          {% endif %}
+        </form>
+      </div>
+
+      {% if selected_language or selected_date %}
+        <a href="{{ url_for('dashboard') }}" style="display: inline-flex; align-items: center; justify-content: center; padding: 10px 16px; border-radius: 12px; border: 2px solid var(--accent); background: transparent; color: var(--accent); font-weight: 700; text-decoration: none; transition: all 0.3s ease; font-size: 13px;">Reset</a>
+      {% endif %}
+    </div>
+
     {% if papers|length == 0 %}
-      <p class="muted">No papers uploaded yet.</p>
+      <p class="muted">No papers found with the selected filters.</p>
     {% else %}
       <table>
         <thead>
@@ -13,6 +50,7 @@
             <th>Language</th>
             <th>Publisher</th>
             <th>Link</th>
+            <th style="text-align: center;">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -24,10 +62,16 @@
               <td>{{ paper.publisher }}</td>
               <td>
                 {% if paper.link %}
-                  <a href="{{ paper.link }}" target="_blank">Open</a>
+                  <a href="{{ paper.link }}" target="_blank" style="color: var(--accent); text-decoration: none; font-weight: 500;">Open PDF</a>
                 {% else %}
                   <span class="muted">No link</span>
                 {% endif %}
+              </td>
+              <td style="text-align: center; white-space: nowrap;">
+                <a href="{{ url_for('edit_paper', paper_id=paper.id) }}" class="action-link edit">Edit</a>
+                <form style="display: inline;" method="post" action="{{ url_for('delete_paper', paper_id=paper.id) }}" onsubmit="return confirm('Delete this paper?');">
+                  <button type="submit" class="action-link delete">Delete</button>
+                </form>
               </td>
             </tr>
           {% endfor %}
