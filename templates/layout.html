@@ -325,6 +325,9 @@
             <a href="{{ url_for('dashboard') }}">Dashboard</a>
             <a href="{{ url_for('upload') }}">Upload</a>
             <a href="{{ url_for('logs') }}">Activity Log</a>
+            {% if session.admin_role == 'super_admin' %}
+              <a href="{{ url_for('manage_admins') }}">Manage Admins</a>
+            {% endif %}
             <a href="{{ url_for('logout') }}">Logout</a>
           {% endif %}
         </div>

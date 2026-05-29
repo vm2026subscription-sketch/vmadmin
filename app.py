@@ -61,6 +61,19 @@ def login_required(handler):
     return wrapper
 
 
+def super_admin_required(handler):
+    def wrapper(*args, **kwargs):
+        if not session.get("admin_id"):
+            return redirect(url_for("login"))
+        if session.get("admin_role") != "super_admin":
+            flash("Access denied. Super admin only.")
+            return redirect(url_for("dashboard"))
+        return handler(*args, **kwargs)
+
+    wrapper.__name__ = handler.__name__
+    return wrapper
+
+
 def build_paper(form):
     date_str = form.get("date") or datetime.utcnow().strftime("%Y-%m-%d")
     language = form.get("language") or "English"
@@ -118,9 +131,10 @@ def setup():
         admins_col.insert_one({
             "username": username,
             "password_hash": password_hash,
+            "role": "super_admin",
             "createdAt": datetime.utcnow(),
         })
-        flash("Admin created. Please log in.")
+        flash("Super admin created. Please log in.")
         return redirect(url_for("login"))
 
     return render_template("setup.html")
@@ -139,6 +153,7 @@ def login():
 
         session["admin_id"] = str(admin["_id"])
         session["admin_username"] = admin["username"]
+        session["admin_role"] = admin.get("role", "admin")
         return redirect(url_for("dashboard"))
 
     return render_template("login.html")
@@ -240,6 +255,139 @@ def delete_paper(paper_id):
     else:
         flash("Paper not found.")
     return redirect(url_for("dashboard"))
+
+
+@app.route("/admins")
+@super_admin_required
+def manage_admins():
+    from bson import ObjectId
+    admins = list(admins_col.find({}, {"password_hash": 0}).sort("createdAt", ASCENDING))
+    for a in admins:
+        a["id"] = str(a["_id"])
+        a.setdefault("role", "admin")
+        created = a.get("createdAt")
+        if isinstance(created, datetime):
+            a["created_display"] = (created + timedelta(hours=5, minutes=30)).strftime("%d %b %Y, %I:%M %p")
+        else:
+            a["created_display"] = "—"
+    return render_template("admins.html", admins=admins, current_id=session["admin_id"])
+
+
+@app.route("/admins/create", methods=["POST"])
+@super_admin_required
+def create_admin():
+    username = (request.form.get("username") or "").strip()
+    password = request.form.get("password") or ""
+    role = request.form.get("role") or "admin"
+
+    if role not in ("admin", "super_admin"):
+        role = "admin"
+
+    if not username or not password:
+        flash("Username and password are required.")
+        return redirect(url_for("manage_admins"))
+
+    if admins_col.find_one({"username": username}):
+        flash(f"Username '{username}' already exists.")
+        return redirect(url_for("manage_admins"))
+
+    admins_col.insert_one({
+        "username": username,
+        "password_hash": generate_password_hash(password),
+        "role": role,
+        "createdAt": datetime.utcnow(),
+    })
+    flash(f"Admin '{username}' created successfully.")
+    return redirect(url_for("manage_admins"))
+
+
+@app.route("/admins/edit/<admin_id>", methods=["GET", "POST"])
+@super_admin_required
+def edit_admin(admin_id):
+    from bson import ObjectId
+    try:
+        oid = ObjectId(admin_id)
+    except Exception:
+        flash("Invalid admin ID.")
+        return redirect(url_for("manage_admins"))
+
+    admin = admins_col.find_one({"_id": oid}, {"password_hash": 0})
+    if not admin:
+        flash("Admin not found.")
+        return redirect(url_for("manage_admins"))
+
+    admin["id"] = str(admin["_id"])
+    admin.setdefault("role", "admin")
+
+    if request.method == "POST":
+        new_username = (request.form.get("username") or "").strip()
+        new_password = request.form.get("password") or ""
+        new_role = request.form.get("role") or "admin"
+
+        if new_role not in ("admin", "super_admin"):
+            new_role = "admin"
+
+        if not new_username:
+            flash("Username is required.")
+            return render_template("edit_admin.html", admin=admin, current_id=session["admin_id"])
+
+        existing = admins_col.find_one({"username": new_username, "_id": {"$ne": oid}})
+        if existing:
+            flash(f"Username '{new_username}' is already taken.")
+            return render_template("edit_admin.html", admin=admin, current_id=session["admin_id"])
+
+        # Prevent removing last super_admin
+        if admin.get("role") == "super_admin" and new_role != "super_admin":
+            remaining = admins_col.count_documents({"role": "super_admin", "_id": {"$ne": oid}})
+            if remaining == 0:
+                flash("Cannot demote the last super admin.")
+                return render_template("edit_admin.html", admin=admin, current_id=session["admin_id"])
+
+        updates = {"username": new_username, "role": new_role}
+        if new_password:
+            updates["password_hash"] = generate_password_hash(new_password)
+
+        admins_col.update_one({"_id": oid}, {"$set": updates})
+
+        # Keep session consistent if editing own account
+        if admin_id == session["admin_id"]:
+            session["admin_username"] = new_username
+            session["admin_role"] = new_role
+
+        flash(f"Admin '{new_username}' updated successfully.")
+        return redirect(url_for("manage_admins"))
+
+    return render_template("edit_admin.html", admin=admin, current_id=session["admin_id"])
+
+
+@app.route("/admins/delete/<admin_id>", methods=["POST"])
+@super_admin_required
+def delete_admin(admin_id):
+    from bson import ObjectId
+    if admin_id == session["admin_id"]:
+        flash("You cannot delete your own account.")
+        return redirect(url_for("manage_admins"))
+
+    try:
+        oid = ObjectId(admin_id)
+    except Exception:
+        flash("Invalid admin ID.")
+        return redirect(url_for("manage_admins"))
+
+    admin = admins_col.find_one({"_id": oid})
+    if not admin:
+        flash("Admin not found.")
+        return redirect(url_for("manage_admins"))
+
+    if admin.get("role") == "super_admin":
+        remaining = admins_col.count_documents({"role": "super_admin", "_id": {"$ne": oid}})
+        if remaining == 0:
+            flash("Cannot delete the last super admin.")
+            return redirect(url_for("manage_admins"))
+
+    admins_col.delete_one({"_id": oid})
+    flash(f"Admin '{admin['username']}' deleted.")
+    return redirect(url_for("manage_admins"))
 
 
 @app.route("/api/epapers/<paper_id>/view", methods=["POST", "OPTIONS"])
