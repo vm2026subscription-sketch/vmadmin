@@ -2,8 +2,8 @@ import os
 from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
-from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
-from pymongo import ASCENDING, DESCENDING, MongoClient
+from flask import Flask, flash, jsonify, make_response, redirect, render_template, request, session, url_for
+from pymongo import ASCENDING, DESCENDING, MongoClient, ReturnDocument
 from werkzeug.security import check_password_hash, generate_password_hash
 
 load_dotenv()
@@ -28,6 +28,14 @@ admins_col.create_index([("username", ASCENDING)], unique=True)
 epapers_col.create_index([("date", DESCENDING)])
 epapers_col.create_index([("publisher", ASCENDING), ("language", ASCENDING)])
 logs_col.create_index([("createdAt", DESCENDING)])
+
+
+def cors(response):
+    response = make_response(response)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
 
 
 def log_activity(action, paper, details=""):
@@ -234,6 +242,23 @@ def delete_paper(paper_id):
     return redirect(url_for("dashboard"))
 
 
+@app.route("/api/epapers/<paper_id>/view", methods=["POST", "OPTIONS"])
+def record_view(paper_id):
+    if request.method == "OPTIONS":
+        return cors(("", 204))
+
+    updated = epapers_col.find_one_and_update(
+        {"id": paper_id},
+        {"$inc": {"views": 1}},
+        projection={"_id": 0, "views": 1},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not updated:
+        return cors((jsonify({"error": "not found"}), 404))
+
+    return cors(jsonify({"id": paper_id, "views": updated.get("views", 0)}))
+
+
 @app.route("/view/<paper_id>")
 def view_paper(paper_id):
     paper = epapers_col.find_one({"id": paper_id}, {"_id": 0})
@@ -284,6 +309,7 @@ def api_epapers():
     for paper in papers:
         paper.setdefault("views", 0)
         paper["viewUrl"] = url_for("view_paper", paper_id=paper["id"], _external=True)
+        paper["viewApiUrl"] = url_for("record_view", paper_id=paper["id"], _external=True)
     return jsonify({"items": papers})
 
 
