@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
@@ -22,10 +22,25 @@ client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
 db = client[MONGO_DB_NAME]
 admins_col = db["admins"]
 epapers_col = db["epapers"]
+logs_col = db["activity_logs"]
 
 admins_col.create_index([("username", ASCENDING)], unique=True)
 epapers_col.create_index([("date", DESCENDING)])
 epapers_col.create_index([("publisher", ASCENDING), ("language", ASCENDING)])
+logs_col.create_index([("createdAt", DESCENDING)])
+
+
+def log_activity(action, paper, details=""):
+    logs_col.insert_one({
+        "action": action,
+        "paper_id": (paper or {}).get("id"),
+        "paper_title": (paper or {}).get("title"),
+        "language": (paper or {}).get("language"),
+        "paper_date": (paper or {}).get("date"),
+        "username": session.get("admin_username", "Unknown"),
+        "details": details,
+        "createdAt": datetime.utcnow(),
+    })
 
 
 def login_required(handler):
@@ -167,6 +182,7 @@ def upload():
 
         paper = build_paper(request.form)
         epapers_col.insert_one(paper)
+        log_activity("upload", paper)
         flash("Paper uploaded successfully.")
         return redirect(url_for("dashboard"))
 
@@ -187,17 +203,18 @@ def edit_paper(paper_id):
             flash("Please provide a PDF URL.")
             return render_template("edit.html", paper=paper)
 
-        epapers_col.update_one(
-            {"id": paper_id},
-            {
-                "$set": {
-                    "date": request.form.get("date") or paper["date"],
-                    "language": request.form.get("language") or paper["language"],
-                    "title": request.form.get("title") or paper["title"],
-                    "link": url,
-                }
-            },
-        )
+        updates = {
+            "date": request.form.get("date") or paper["date"],
+            "language": request.form.get("language") or paper["language"],
+            "title": request.form.get("title") or paper["title"],
+            "link": url,
+        }
+        epapers_col.update_one({"id": paper_id}, {"$set": updates})
+
+        changed = [field for field, value in updates.items() if paper.get(field) != value]
+        details = "Changed: " + ", ".join(changed) if changed else "No fields changed"
+        log_activity("edit", {**paper, **updates}, details)
+
         flash("Paper updated successfully.")
         return redirect(url_for("dashboard"))
 
@@ -207,12 +224,40 @@ def edit_paper(paper_id):
 @app.route("/delete/<paper_id>", methods=["POST"])
 @login_required
 def delete_paper(paper_id):
+    paper = epapers_col.find_one({"id": paper_id}, {"_id": 0})
     result = epapers_col.delete_one({"id": paper_id})
     if result.deleted_count > 0:
+        log_activity("delete", paper)
         flash("Paper deleted successfully.")
     else:
         flash("Paper not found.")
     return redirect(url_for("dashboard"))
+
+
+@app.route("/view/<paper_id>")
+def view_paper(paper_id):
+    paper = epapers_col.find_one({"id": paper_id}, {"_id": 0})
+    if not paper or not paper.get("link"):
+        return "Paper not found", 404
+
+    # Count only public reads, not admin previews, so the total reflects real readers.
+    if not session.get("admin_id"):
+        epapers_col.update_one({"id": paper_id}, {"$inc": {"views": 1}})
+
+    return redirect(paper["link"])
+
+
+@app.route("/logs")
+@login_required
+def logs():
+    entries = list(logs_col.find({}, {"_id": 0}).sort("createdAt", DESCENDING).limit(500))
+    for entry in entries:
+        created = entry.get("createdAt")
+        if isinstance(created, datetime):
+            entry["when"] = (created + timedelta(hours=5, minutes=30)).strftime("%d %b %Y, %I:%M %p")
+        else:
+            entry["when"] = "—"
+    return render_template("logs.html", logs=entries)
 
 
 @app.route("/api/epapers", methods=["GET"])
@@ -236,6 +281,9 @@ def api_epapers():
         limit_value = 200
 
     papers = list(epapers_col.find(query, {"_id": 0}).sort("date", DESCENDING).limit(limit_value))
+    for paper in papers:
+        paper.setdefault("views", 0)
+        paper["viewUrl"] = url_for("view_paper", paper_id=paper["id"], _external=True)
     return jsonify({"items": papers})
 
 

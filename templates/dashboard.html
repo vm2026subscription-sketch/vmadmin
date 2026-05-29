@@ -50,6 +50,7 @@
             <th>Language</th>
             <th>Publisher</th>
             <th>Link</th>
+            <th style="text-align: center;">Views</th>
             <th style="text-align: center;">Actions</th>
           </tr>
         </thead>
@@ -67,6 +68,7 @@
                   <span class="muted">No link</span>
                 {% endif %}
               </td>
+              <td style="text-align: center; font-weight: 700;">{{ paper.views or 0 }}</td>
               <td style="text-align: center; white-space: nowrap;">
                 <a href="{{ url_for('edit_paper', paper_id=paper.id) }}" class="action-link edit">Edit</a>
                 <form style="display: inline;" method="post" action="{{ url_for('delete_paper', paper_id=paper.id) }}" onsubmit="return confirm('Delete this paper?');">
